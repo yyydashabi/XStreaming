@@ -1,0 +1,72 @@
+name: Build XStreaming iOS IPA
+on:
+  push:
+    branches:
+      - ios
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build iOS
+    runs-on: macos-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: yarn
+
+      - name: Install dependencies
+        run: |
+          yarn install
+
+      - name: Import Apple Signing Cert
+        uses: apple-actions/import-codesign-certs@v2
+        with:
+          p12-file-base64: ${{ secrets.P12_BASE64 }}
+          p12-password: ${{ secrets.P12_PASSWORD }}
+          provisioning-profile-base64: ${{ secrets.PROV_BASE64 }}
+
+      - name: Install CocoaPods
+        run: sudo gem install cocoapods
+
+      - name: Pod install
+        run: |
+          cd ios
+          pod install --repo-update
+
+      - name: Xcode Archive & Export IPA
+        run: |
+          cd ios
+          SCHEME="XStreaming"
+          ARCHIVE_PATH="./build/${SCHEME}.xcarchive"
+          EXPORT_PATH="./output"
+          mkdir -p ${EXPORT_PATH}
+
+          xcodebuild archive \
+            -scheme ${SCHEME} \
+            -configuration Release \
+            -archivePath ${ARCHIVE_PATH} \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO
+
+          cp ../exportOptions.plist ./
+          xcodebuild -exportArchive \
+            -archivePath ${ARCHIVE_PATH} \
+            -exportOptionsPlist exportOptions.plist \
+            -exportPath ${EXPORT_PATH}
+
+      - name: Upload IPA Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: XStreaming-iOS-IPA
+          path: ios/output/*.ipa
+          retention-days: 7
